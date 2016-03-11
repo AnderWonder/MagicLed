@@ -1,0 +1,260 @@
+#include <tiny13a.h>
+#include <delay.h>
+#include <stdlib.h>
+
+//#define PROTEUS_SIMULATION//из-за ошибок симул€ции Watchdog в протеусе используем чуть разный код.
+//                          //ƒл€ рабочей прошивки закоментировать этот макрос
+
+//PORTS
+
+/*
+#define RED_P 4
+#define GREEN_P 2
+#define BLUE_P 3
+#define SENSOR_OUT_P 1
+#define SENSOR_IN_P 0
+*/
+
+//*
+#define RED_P 0
+#define GREEN_P 1
+#define BLUE_P 2
+#define SENSOR_OUT_P 3
+#define SENSOR_IN_P 4
+//*/
+
+//STATES
+#define SLEEP 0
+#define AWAKED 1
+#define SHINE1 2
+#define SHINE2 3
+#define SHINE3 4
+#define SHINE4 5
+//CONSTS
+
+//√лобальные переменные
+unsigned char pwm_counter=0;//счЄтчик Ў»ћ цикла
+unsigned char red_bs=0;//€ркость красного светодиода (0-255)
+unsigned char green_bs=0;//€ркость зеленого светодиода (0-255) 
+unsigned char blue_bs=0;//€ркость синего светодиода (0-255)
+unsigned int time;//подсчЄт времени непрерывного свечени€
+unsigned char sensorNotTouched;//значение не притронутого сенсора, устанавливаетс€ в процессе
+                              //калибровки
+unsigned char STATE=0;//состо€ние программы
+//********* ќбъ€влени€ функций *********
+void common_init();
+//
+void sensorCalibration();
+unsigned char sensorTouched();//провер€ет есть ли прикосновение к сенсору, возвращает 1 если есть, 
+                              //0 если нет
+unsigned int sensorValue();//получает значение сенсора
+//
+void changeColor1(unsigned char shine,unsigned char pause);//плавный переход к случайному значению 
+                                                           //случайного канала (одного из R,G,B)
+                                                           //или затухание если shine=0
+//**************************************
+void main(void)
+{
+    unsigned char sleepCount=0;//счЄтчик циклов сп€щего режима    
+    unsigned char i;
+    
+    common_init();              
+    
+    PORTB.RED_P=1;PORTB.GREEN_P=1;PORTB.BLUE_P=1;
+    
+    delay_ms(5000);
+        
+    //дл€ отладки - определение значени€ непритронутого сенсора
+    /*if (sensorNotTouched>125)red_bs=100;
+    if (sensorNotTouched>170)blue_bs=100;
+    if (sensorNotTouched>200)green_bs=100;*/  
+   
+    //#asm("sei") //прерывание включаютс€ в функции sensorValue 
+
+    while (1){              
+        
+        if(time>26368||sleepCount==0){//рекалибровка раз в 2,43 минуты сп€щего режима 
+                                      //и раз в 3 минуты свечени€
+            time=0;
+            sensorCalibration();
+        }
+        
+        if(sensorTouched()){
+             
+             srand(time+sleepCount);
+             
+             switch(STATE){                
+                case SLEEP:            
+                    STATE=AWAKED;
+                    changeColor1(1,12);//медленно разжигаем
+                    break;
+                case AWAKED:                             
+                    //получаем случайное значение от 2 до 4
+                    STATE=(rand()&3)+2;                          
+                    break;               
+                case SHINE1: 
+                case SHINE2: 
+                    //эффект свечени€ 1
+                    for(i=0;i<=7;i++)changeColor1(1,3);
+                    STATE=AWAKED;
+                    break;
+                case SHINE3:
+                case SHINE4:
+                    //эффект свечени€ 2   
+                    changeColor1(0,5);
+                    delay_ms(100); 
+                    changeColor1(1,5);
+                    STATE=AWAKED;
+                    break; 
+             }                                         
+        }
+        else{            
+            if(STATE==SLEEP)sleepCount++;//+0,507 сек сп€щего режима
+            else{
+                changeColor1(0,15);//медленно гасим
+                //sleepCount=0;//специально не сбрасываем счЄтчик, что бы калибровка запускалась при 
+                               //частых переходах сон-активность
+                time=0;
+                STATE=SLEEP;     
+            } 
+            #ifndef PROTEUS_SIMULATION  
+                //¬ключаем Watchdog Timer interrupt
+                WDTCR|=0x40;   
+                //переходим в энергосберегающий режим        
+                #asm("sleep");
+            #else
+            	delay_ms(500);//в Proteus сп€чку имитируем задержкой
+            #endif
+        }  
+    }
+}
+void sensorCalibration()
+{
+    unsigned char max;
+    unsigned char i;
+    
+    sensorNotTouched=0;
+    
+    for(i=1;i<=10;i++){
+        max=sensorValue();
+        if(max>sensorNotTouched)sensorNotTouched=max;
+        
+        //дл€ отладки - индикаци€ калибровки
+        //if(red_bs==0)red_bs=100;
+        //else red_bs=0;
+        //delay_ms(50);
+        
+        delay_ms(50);                           
+    }
+}
+unsigned char sensorTouched()
+{
+    unsigned char t=0;
+    unsigned char i;  
+    for(i=1;i<=10;i++){
+        if(sensorValue()>sensorNotTouched+15)t++;
+        else if(t>0)t--;
+        delay_ms(10);
+    }
+    return t;
+}
+unsigned int sensorValue()
+{
+    unsigned char sensorValue;
+       
+    #asm("cli")    
+    PORTB.SENSOR_OUT_P=1;
+    TCNT0=0;
+    while(!PINB.SENSOR_IN_P); 
+    sensorValue=TCNT0;    
+    #asm("sei")
+    PORTB.SENSOR_OUT_P=0;       
+    return sensorValue;
+}
+//----------------------------------------------------------------------------------------------------
+void common_init()
+{
+    #pragma optsize-
+    //Crystal Oscillator division factor: 1
+    CLKPR=0x80;
+    CLKPR=0x00;
+    #ifdef _OPTIMIZE_SIZE_
+    #pragma optsize+
+    #endif     
+    //Watchdog Timer initialization         
+    //Watchdog Timer Prescaler: OSC/64k - period .5 sec
+    //Watchdog mode: interrupt
+    WDTCR=0b00010101;
+    //Enable sleep mode
+    MCUCR|=0b00110000; 
+    //Analog Comparator off in power reduction
+    ACSR=0x80;
+    //ADC off in power reduction
+    PRR=1;  
+    //установка режима таймера
+    //Mode:Normal
+    //TCCR0A=0;
+    //division factor: 1
+    TCCR0B=1;
+    //timer interrupt on overflow
+    TIMSK0=0b10;
+    //Input/Output Ports initialization
+    DDRB.SENSOR_OUT_P=1;
+    //DDRB.SENSOR_IN_P=0;//by default
+    DDRB.RED_P=1;
+    DDRB.BLUE_P=1;
+    DDRB.GREEN_P=1;
+}
+void changeColor1(unsigned char shine,unsigned char pause)
+{
+    unsigned char to_red=0,to_blue=0,to_green=0;
+    if(shine){       
+        //выбираем случайный канал и цвет
+        loop:
+        shine=rand()&3;//случайное значение канала
+        switch (shine){
+            case 0:
+                to_red=rand();
+                break;
+            case 1:
+                to_green=rand();
+                break;
+            case 2:           
+                to_blue=rand();
+                break; 
+            default:           
+                goto loop;                   
+        }
+    }
+    //выполн€ем плавный переход к полученному цвету    
+    while(red_bs!=to_red||green_bs!=to_green||blue_bs!=to_blue){
+        
+        if(to_red!=red_bs)
+            if(to_red>red_bs)red_bs++;
+            else red_bs--;
+        if(to_green!=green_bs)
+            if(to_green>green_bs)green_bs++;
+            else green_bs--;
+        if(to_blue!=blue_bs)
+            if(to_blue>blue_bs)blue_bs++;
+            else blue_bs--;
+        
+        delay_ms(pause);
+    } 
+}
+
+//ќбработчики прерываний
+// Timer 0 overflow interrupt service routine
+interrupt [TIM0_OVF] void timer0_ovf_isr(void)
+{
+    PORTB.RED_P=(pwm_counter>=red_bs<<1);
+    PORTB.GREEN_P=(pwm_counter>=green_bs<<1);
+    PORTB.BLUE_P=(pwm_counter>=blue_bs<<1);
+    pwm_counter++;
+    if(STATE!=SLEEP&&pwm_counter==0)time++;//подсчет времени свечени€, + 0,006826667 сек    
+}
+// Watchdog timeout interrupt service routine
+interrupt [WDT] void wdt_timeout_isr(void)
+{
+    //ничего не делаем, прерывание используетс€ только дл€ выхода из сп€щего режима
+}

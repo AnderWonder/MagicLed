@@ -1,0 +1,727 @@
+;#include <tiny13a.h>
+;PCODE: $00000000 VOL: 0
+	#ifndef __SLEEP_DEFINED__
+;PCODE: $00000001 VOL: 0
+	#define __SLEEP_DEFINED__
+;PCODE: $00000002 VOL: 0
+	.EQU __se_bit=0x20
+;PCODE: $00000003 VOL: 0
+	.EQU __sm_mask=0x18
+;PCODE: $00000004 VOL: 0
+	.EQU __sm_adc_noise_red=0x08
+;PCODE: $00000005 VOL: 0
+	.EQU __sm_powerdown=0x10
+;PCODE: $00000006 VOL: 0
+	.SET power_ctrl_reg=mcucr
+;PCODE: $00000007 VOL: 0
+	#endif
+;PCODE: $00000008 VOL: 0
+;PCODE: $00000009 VOL: 0
+;#include <delay.h>
+;#include <stdlib.h>
+;
+;//#define PROTEUS_SIMULATION//из-за ошибок симул€ции Watchdog в протеусе используем чуть разный код.
+;//                          //ƒл€ рабочей прошивки закоментировать этот макрос
+;
+;//PORTS
+;
+;/*
+;#define RED_P 4
+;#define GREEN_P 2
+;#define BLUE_P 3
+;#define SENSOR_OUT_P 1
+;#define SENSOR_IN_P 0
+;*/
+;
+;//*
+;#define RED_P 0
+;#define GREEN_P 1
+;#define BLUE_P 2
+;#define SENSOR_OUT_P 3
+;#define SENSOR_IN_P 4
+;//*/
+;
+;//STATES
+;#define SLEEP 0
+;#define AWAKED 1
+;#define SHINE1 2
+;#define SHINE2 3
+;#define SHINE3 4
+;#define SHINE4 5
+;//CONSTS
+;
+;//√лобальные переменные
+;unsigned char pwm_counter=0;//счЄтчик Ў»ћ цикла
+;unsigned char red_bs=0;//€ркость красного светодиода (0-255)
+;unsigned char green_bs=0;//€ркость зеленого светодиода (0-255)
+;unsigned char blue_bs=0;//€ркость синего светодиода (0-255)
+;unsigned int time;//подсчЄт времени непрерывного свечени€
+;unsigned char sensorNotTouched;//значение не притронутого сенсора, устанавливаетс€ в процессе
+;                              //калибровки
+;unsigned char STATE=0;//состо€ние программы
+;//********* ќбъ€влени€ функций *********
+;void common_init();
+;//
+;void sensorCalibration();
+;unsigned char sensorTouched();//провер€ет есть ли прикосновение к сенсору, возвращает 1 если есть,
+;                              //0 если нет
+;unsigned int sensorValue();//получает значение сенсора
+;//
+;void changeColor1(unsigned char shine,unsigned char pause);//плавный переход к случайному значению
+;                                                           //случайного канала (одного из R,G,B)
+;                                                           //или затухание если shine=0
+;//**************************************
+;void main(void)
+; 0000 0039 {
+
+	.CSEG
+;PCODE: $0000000A VOL: 0
+; 0000 003A     unsigned char sleepCount=0;//счЄтчик циклов сп€щего режима
+; 0000 003B     unsigned char i;
+; 0000 003C 
+; 0000 003D     common_init();
+;	sleepCount -> R16
+;	i -> R17
+;PCODE: $0000000B VOL: 0
+;PCODE: $0000000C VOL: 0
+;PCODE: $0000000D VOL: 0
+; 0000 003E 
+; 0000 003F     PORTB.RED_P=1;PORTB.GREEN_P=1;PORTB.BLUE_P=1;
+;PCODE: $0000000E VOL: 0
+;PCODE: $0000000F VOL: 0
+;PCODE: $00000010 VOL: 0
+;PCODE: $00000011 VOL: 0
+;PCODE: $00000012 VOL: 0
+;PCODE: $00000013 VOL: 0
+; 0000 0040 
+; 0000 0041     delay_ms(5000);
+;PCODE: $00000014 VOL: 0
+;PCODE: $00000015 VOL: 0
+;PCODE: $00000016 VOL: 0
+; 0000 0042 
+; 0000 0043     //дл€ отладки - определение значени€ непритронутого сенсора
+; 0000 0044     /*if (sensorNotTouched>125)red_bs=100;
+; 0000 0045     if (sensorNotTouched>170)blue_bs=100;
+; 0000 0046     if (sensorNotTouched>200)green_bs=100;*/
+; 0000 0047 
+; 0000 0048     //#asm("sei") //прерывание включаютс€ в функции sensorValue
+; 0000 0049 
+; 0000 004A     while (1){
+;PCODE: $00000017 VOL: 0
+; 0000 004B 
+; 0000 004C         if(time>26368||sleepCount==0){//рекалибровка раз в 2,43 минуты сп€щего режима
+;PCODE: $00000018 VOL: 0
+;PCODE: $00000019 VOL: 0
+;PCODE: $0000001A VOL: 0
+;PCODE: $0000001B VOL: 0
+;PCODE: $0000001C VOL: 0
+;PCODE: $0000001D VOL: 0
+;PCODE: $0000001E VOL: 0
+; 0000 004D                                       //и раз в 3 минуты свечени€
+; 0000 004E             time=0;
+;PCODE: $0000001F VOL: 0
+; 0000 004F             sensorCalibration();
+;PCODE: $00000020 VOL: 0
+; 0000 0050         }
+; 0000 0051 
+; 0000 0052         if(sensorTouched()){
+;PCODE: $00000021 VOL: 0
+;PCODE: $00000022 VOL: 0
+;PCODE: $00000023 VOL: 0
+;PCODE: $00000024 VOL: 0
+; 0000 0053 
+; 0000 0054              srand(time+sleepCount);
+;PCODE: $00000025 VOL: 0
+;PCODE: $00000026 VOL: 0
+;PCODE: $00000027 VOL: 0
+;PCODE: $00000028 VOL: 0
+;PCODE: $00000029 VOL: 0
+; 0000 0055 
+; 0000 0056              switch(STATE){
+;PCODE: $0000002A VOL: 0
+;PCODE: $0000002B VOL: 0
+; 0000 0057                 case SLEEP:
+;PCODE: $0000002C VOL: 0
+;PCODE: $0000002D VOL: 0
+; 0000 0058                     STATE=AWAKED;
+;PCODE: $0000002E VOL: 0
+;PCODE: $0000002F VOL: 0
+; 0000 0059                     changeColor1(1,12);//медленно разжигаем
+;PCODE: $00000030 VOL: 0
+;PCODE: $00000031 VOL: 0
+;PCODE: $00000032 VOL: 0
+;PCODE: $00000033 VOL: 0
+;PCODE: $00000034 VOL: 0
+; 0000 005A                     break;
+;PCODE: $00000035 VOL: 0
+; 0000 005B                 case AWAKED:
+;PCODE: $00000036 VOL: 0
+;PCODE: $00000037 VOL: 0
+;PCODE: $00000038 VOL: 0
+; 0000 005C                     //получаем случайное значение от 2 до 4
+; 0000 005D                     STATE=(rand()&3)+2;
+;PCODE: $00000039 VOL: 0
+;PCODE: $0000003A VOL: 0
+;PCODE: $0000003B VOL: 0
+;PCODE: $0000003C VOL: 0
+; 0000 005E                     break;
+;PCODE: $0000003D VOL: 0
+; 0000 005F                 case SHINE1:
+;PCODE: $0000003E VOL: 0
+;PCODE: $0000003F VOL: 0
+;PCODE: $00000040 VOL: 0
+; 0000 0060                 case SHINE2:
+;PCODE: $00000041 VOL: 0
+;PCODE: $00000042 VOL: 0
+;PCODE: $00000043 VOL: 0
+;PCODE: $00000044 VOL: 0
+;PCODE: $00000045 VOL: 0
+; 0000 0061                     //эффект свечени€ 1
+; 0000 0062                     for(i=0;i<=7;i++)changeColor1(1,3);
+;PCODE: $00000046 VOL: 0
+;PCODE: $00000047 VOL: 0
+;PCODE: $00000048 VOL: 0
+;PCODE: $00000049 VOL: 0
+;PCODE: $0000004A VOL: 0
+;PCODE: $0000004B VOL: 0
+;PCODE: $0000004C VOL: 0
+;PCODE: $0000004D VOL: 0
+;PCODE: $0000004E VOL: 0
+;PCODE: $0000004F VOL: 0
+;PCODE: $00000050 VOL: 0
+;PCODE: $00000051 VOL: 0
+;PCODE: $00000052 VOL: 0
+;PCODE: $00000053 VOL: 0
+;PCODE: $00000054 VOL: 0
+;PCODE: $00000055 VOL: 0
+;PCODE: $00000056 VOL: 0
+;PCODE: $00000057 VOL: 0
+;PCODE: $00000058 VOL: 0
+; 0000 0063 STATE=1;
+;PCODE: $00000059 VOL: 0
+;PCODE: $0000005A VOL: 0
+; 0000 0064                     break;
+;PCODE: $0000005B VOL: 0
+; 0000 0065                 case SHINE3:
+;PCODE: $0000005C VOL: 0
+;PCODE: $0000005D VOL: 0
+;PCODE: $0000005E VOL: 0
+; 0000 0066                 case SHINE4:
+;PCODE: $0000005F VOL: 0
+;PCODE: $00000060 VOL: 0
+;PCODE: $00000061 VOL: 0
+;PCODE: $00000062 VOL: 0
+;PCODE: $00000063 VOL: 0
+; 0000 0067                     //эффект свечени€ 2
+; 0000 0068                     changeColor1(0,5);
+;PCODE: $00000064 VOL: 0
+;PCODE: $00000065 VOL: 0
+;PCODE: $00000066 VOL: 0
+;PCODE: $00000067 VOL: 0
+;PCODE: $00000068 VOL: 0
+; 0000 0069                     delay_ms(100);
+;PCODE: $00000069 VOL: 0
+;PCODE: $0000006A VOL: 0
+;PCODE: $0000006B VOL: 0
+; 0000 006A                     changeColor1(1,5);
+;PCODE: $0000006C VOL: 0
+;PCODE: $0000006D VOL: 0
+;PCODE: $0000006E VOL: 0
+;PCODE: $0000006F VOL: 0
+;PCODE: $00000070 VOL: 0
+; 0000 006B                     STATE=AWAKED;
+;PCODE: $00000071 VOL: 0
+;PCODE: $00000072 VOL: 0
+; 0000 006C                     break;
+;PCODE: $00000073 VOL: 0
+; 0000 006D              }
+;PCODE: $00000074 VOL: 0
+; 0000 006E         }
+; 0000 006F         else{
+;PCODE: $00000075 VOL: 0
+;PCODE: $00000076 VOL: 0
+; 0000 0070             if(STATE==SLEEP)sleepCount++;//+0,507 сек сп€щего режима
+;PCODE: $00000077 VOL: 0
+;PCODE: $00000078 VOL: 0
+;PCODE: $00000079 VOL: 0
+;PCODE: $0000007A VOL: 0
+; 0000 0071             else{
+;PCODE: $0000007B VOL: 0
+;PCODE: $0000007C VOL: 0
+; 0000 0072                 changeColor1(0,15);//медленно гасим
+;PCODE: $0000007D VOL: 0
+;PCODE: $0000007E VOL: 0
+;PCODE: $0000007F VOL: 0
+;PCODE: $00000080 VOL: 0
+;PCODE: $00000081 VOL: 0
+; 0000 0073                 //sleepCount=0;//специально не сбрасываем счЄтчик, что бы калибровка запускалась при
+; 0000 0074                                //частых переходах сон-активность
+; 0000 0075                 time=0;
+;PCODE: $00000082 VOL: 0
+; 0000 0076                 STATE=SLEEP;
+;PCODE: $00000083 VOL: 0
+; 0000 0077             }
+;PCODE: $00000084 VOL: 0
+; 0000 0078             #ifndef PROTEUS_SIMULATION
+; 0000 0079                 //¬ключаем Watchdog Timer interrupt
+; 0000 007A                 WDTCR|=0x40;
+;PCODE: $00000085 VOL: 0
+;PCODE: $00000086 VOL: 0
+;PCODE: $00000087 VOL: 0
+; 0000 007B                 //переходим в энергосберегающий режим
+; 0000 007C                 #asm("sleep");
+;PCODE: $00000088 VOL: 0
+	sleep
+;PCODE: $00000089 VOL: 0
+; 0000 007D             #else
+; 0000 007E             	delay_ms(500);//в Proteus сп€чку имитируем задержкой
+; 0000 007F             #endif
+; 0000 0080         }
+;PCODE: $0000008A VOL: 0
+; 0000 0081     }
+;PCODE: $0000008B VOL: 0
+;PCODE: $0000008C VOL: 0
+; 0000 0082 }
+;PCODE: $0000008D VOL: 0
+;PCODE: $0000008E VOL: 0
+;PCODE: $0000008F VOL: 0
+;void sensorCalibration()
+; 0000 0084 {
+;PCODE: $00000090 VOL: 0
+;PCODE: $00000091 VOL: 0
+; 0000 0085     unsigned char max;
+; 0000 0086     unsigned char i;
+; 0000 0087 
+; 0000 0088     sensorNotTouched=0;
+;PCODE: $00000092 VOL: 0
+;	max -> R16
+;	i -> R17
+;PCODE: $00000093 VOL: 0
+; 0000 0089 
+; 0000 008A     for(i=1;i<=10;i++){
+;PCODE: $00000094 VOL: 0
+;PCODE: $00000095 VOL: 0
+;PCODE: $00000096 VOL: 0
+;PCODE: $00000097 VOL: 0
+;PCODE: $00000098 VOL: 0
+;PCODE: $00000099 VOL: 0
+;PCODE: $0000009A VOL: 0
+;PCODE: $0000009B VOL: 0
+;PCODE: $0000009C VOL: 0
+; 0000 008B         max=sensorValue();
+;PCODE: $0000009D VOL: 0
+;PCODE: $0000009E VOL: 0
+; 0000 008C         if(max>sensorNotTouched)sensorNotTouched=max;
+;PCODE: $0000009F VOL: 0
+;PCODE: $000000A0 VOL: 0
+;PCODE: $000000A1 VOL: 0
+;PCODE: $000000A2 VOL: 0
+;PCODE: $000000A3 VOL: 0
+; 0000 008D 
+; 0000 008E         //дл€ отладки - индикаци€ калибровки
+; 0000 008F         //if(red_bs==0)red_bs=100;
+; 0000 0090         //else red_bs=0;
+; 0000 0091         //delay_ms(50);
+; 0000 0092 
+; 0000 0093         delay_ms(50);
+;PCODE: $000000A4 VOL: 0
+;PCODE: $000000A5 VOL: 0
+;PCODE: $000000A6 VOL: 0
+;PCODE: $000000A7 VOL: 0
+; 0000 0094     }
+;PCODE: $000000A8 VOL: 0
+;PCODE: $000000A9 VOL: 0
+;PCODE: $000000AA VOL: 0
+;PCODE: $000000AB VOL: 0
+;PCODE: $000000AC VOL: 0
+; 0000 0095 }
+;PCODE: $000000AD VOL: 0
+;PCODE: $000000AE VOL: 0
+;PCODE: $000000AF VOL: 0
+;unsigned char sensorTouched()
+; 0000 0097 {
+;PCODE: $000000B0 VOL: 0
+;PCODE: $000000B1 VOL: 0
+; 0000 0098     unsigned char t=0;
+; 0000 0099     unsigned char i;
+; 0000 009A     for(i=1;i<=10;i++){
+;PCODE: $000000B2 VOL: 0
+;	t -> R16
+;	i -> R17
+;PCODE: $000000B3 VOL: 0
+;PCODE: $000000B4 VOL: 0
+;PCODE: $000000B5 VOL: 0
+;PCODE: $000000B6 VOL: 0
+;PCODE: $000000B7 VOL: 0
+;PCODE: $000000B8 VOL: 0
+;PCODE: $000000B9 VOL: 0
+;PCODE: $000000BA VOL: 0
+;PCODE: $000000BB VOL: 0
+;PCODE: $000000BC VOL: 0
+;PCODE: $000000BD VOL: 0
+; 0000 009B         if(sensorValue()>sensorNotTouched+15)t++;
+;PCODE: $000000BE VOL: 0
+;PCODE: $000000BF VOL: 0
+;PCODE: $000000C0 VOL: 0
+;PCODE: $000000C1 VOL: 0
+;PCODE: $000000C2 VOL: 0
+;PCODE: $000000C3 VOL: 0
+;PCODE: $000000C4 VOL: 0
+;PCODE: $000000C5 VOL: 0
+;PCODE: $000000C6 VOL: 0
+; 0000 009C         else if(t>0)t--;
+;PCODE: $000000C7 VOL: 0
+;PCODE: $000000C8 VOL: 0
+;PCODE: $000000C9 VOL: 0
+;PCODE: $000000CA VOL: 0
+;PCODE: $000000CB VOL: 0
+;PCODE: $000000CC VOL: 0
+;PCODE: $000000CD VOL: 0
+; 0000 009D         delay_ms(10);
+;PCODE: $000000CE VOL: 0
+;PCODE: $000000CF VOL: 0
+;PCODE: $000000D0 VOL: 0
+;PCODE: $000000D1 VOL: 0
+;PCODE: $000000D2 VOL: 0
+; 0000 009E     }
+;PCODE: $000000D3 VOL: 0
+;PCODE: $000000D4 VOL: 0
+;PCODE: $000000D5 VOL: 0
+;PCODE: $000000D6 VOL: 0
+;PCODE: $000000D7 VOL: 0
+; 0000 009F     return t;
+;PCODE: $000000D8 VOL: 0
+;PCODE: $000000D9 VOL: 0
+;PCODE: $000000DA VOL: 0
+; 0000 00A0 }
+;PCODE: $000000DB VOL: 0
+;unsigned int sensorValue()
+; 0000 00A2 {
+;PCODE: $000000DC VOL: 0
+;PCODE: $000000DD VOL: 0
+; 0000 00A3     unsigned char sensorValue;
+; 0000 00A4 
+; 0000 00A5     #asm("cli")
+;PCODE: $000000DE VOL: 0
+;	sensorValue -> R16
+;PCODE: $000000DF VOL: 0
+	cli
+;PCODE: $000000E0 VOL: 0
+; 0000 00A6     PORTB.SENSOR_OUT_P=1;
+;PCODE: $000000E1 VOL: 0
+;PCODE: $000000E2 VOL: 0
+; 0000 00A7     TCNT0=0;
+;PCODE: $000000E3 VOL: 0
+;PCODE: $000000E4 VOL: 0
+; 0000 00A8     while(!PINB.SENSOR_IN_P);
+;PCODE: $000000E5 VOL: 0
+;PCODE: $000000E6 VOL: 0
+;PCODE: $000000E7 VOL: 0
+;PCODE: $000000E8 VOL: 0
+;PCODE: $000000E9 VOL: 0
+;PCODE: $000000EA VOL: 0
+; 0000 00A9     sensorValue=TCNT0;
+;PCODE: $000000EB VOL: 0
+;PCODE: $000000EC VOL: 0
+; 0000 00AA     #asm("sei")
+;PCODE: $000000ED VOL: 0
+	sei
+;PCODE: $000000EE VOL: 0
+; 0000 00AB     PORTB.SENSOR_OUT_P=0;
+;PCODE: $000000EF VOL: 0
+;PCODE: $000000F0 VOL: 0
+; 0000 00AC     return sensorValue;
+;PCODE: $000000F1 VOL: 0
+;PCODE: $000000F2 VOL: 0
+;PCODE: $000000F3 VOL: 0
+;PCODE: $000000F4 VOL: 0
+; 0000 00AD }
+;PCODE: $000000F5 VOL: 0
+;//----------------------------------------------------------------------------------------------------
+;void common_init()
+; 0000 00B0 {
+;PCODE: $000000F6 VOL: 0
+;PCODE: $000000F7 VOL: 0
+; 0000 00B1     #pragma optsize-
+; 0000 00B2     //Crystal Oscillator division factor: 1
+; 0000 00B3     CLKPR=0x80;
+;PCODE: $000000F8 VOL: 0
+;PCODE: $000000F9 VOL: 0
+; 0000 00B4     CLKPR=0x00;
+;PCODE: $000000FA VOL: 0
+;PCODE: $000000FB VOL: 0
+; 0000 00B5     #ifdef _OPTIMIZE_SIZE_
+; 0000 00B6     #pragma optsize+
+; 0000 00B7     #endif
+; 0000 00B8     //Watchdog Timer initialization
+; 0000 00B9     //Watchdog Timer Prescaler: OSC/64k - period .5 sec
+; 0000 00BA     //Watchdog mode: interrupt
+; 0000 00BB     WDTCR=0b00010101;
+;PCODE: $000000FC VOL: 0
+;PCODE: $000000FD VOL: 0
+; 0000 00BC     //Enable sleep mode
+; 0000 00BD     MCUCR|=0b00110000;
+;PCODE: $000000FE VOL: 0
+;PCODE: $000000FF VOL: 0
+;PCODE: $00000100 VOL: 0
+; 0000 00BE     //Analog Comparator off in power reduction
+; 0000 00BF     ACSR=0x80;
+;PCODE: $00000101 VOL: 0
+;PCODE: $00000102 VOL: 0
+; 0000 00C0     //ADC off in power reduction
+; 0000 00C1     PRR=1;
+;PCODE: $00000103 VOL: 0
+;PCODE: $00000104 VOL: 0
+; 0000 00C2     //установка режима таймера
+; 0000 00C3     //Mode:Normal
+; 0000 00C4     //TCCR0A=0;
+; 0000 00C5     //division factor: 1
+; 0000 00C6     TCCR0B=1;
+;PCODE: $00000105 VOL: 0
+;PCODE: $00000106 VOL: 0
+; 0000 00C7     //timer interrupt on overflow
+; 0000 00C8     TIMSK0=0b10;
+;PCODE: $00000107 VOL: 0
+;PCODE: $00000108 VOL: 0
+; 0000 00C9     //Input/Output Ports initialization
+; 0000 00CA     DDRB.SENSOR_OUT_P=1;
+;PCODE: $00000109 VOL: 0
+;PCODE: $0000010A VOL: 0
+; 0000 00CB     //DDRB.SENSOR_IN_P=0;//by default
+; 0000 00CC     DDRB.RED_P=1;
+;PCODE: $0000010B VOL: 0
+;PCODE: $0000010C VOL: 0
+; 0000 00CD     DDRB.BLUE_P=1;
+;PCODE: $0000010D VOL: 0
+;PCODE: $0000010E VOL: 0
+; 0000 00CE     DDRB.GREEN_P=1;
+;PCODE: $0000010F VOL: 0
+;PCODE: $00000110 VOL: 0
+; 0000 00CF }
+;PCODE: $00000111 VOL: 0
+;PCODE: $00000112 VOL: 0
+;void changeColor1(unsigned char shine,unsigned char pause)
+; 0000 00D1 {
+;PCODE: $00000113 VOL: 0
+;PCODE: $00000114 VOL: 0
+; 0000 00D2     unsigned char to_red=0,to_blue=0,to_green=0;
+; 0000 00D3     if(shine){
+;PCODE: $00000115 VOL: 0
+;	shine -> Y+4
+;	pause -> Y+3
+;	to_red -> R16
+;	to_blue -> R17
+;	to_green -> R18
+;PCODE: $00000116 VOL: 0
+;PCODE: $00000117 VOL: 0
+;PCODE: $00000118 VOL: 0
+;PCODE: $00000119 VOL: 0
+;PCODE: $0000011A VOL: 0
+;PCODE: $0000011B VOL: 0
+;PCODE: $0000011C VOL: 0
+;PCODE: $0000011D VOL: 0
+;PCODE: $0000011E VOL: 0
+; 0000 00D4         //выбираем случайный канал и цвет
+; 0000 00D5         loop:
+;PCODE: $0000011F VOL: 0
+; 0000 00D6         shine=rand()&3;//случайное значение канала
+;PCODE: $00000120 VOL: 0
+;PCODE: $00000121 VOL: 0
+;PCODE: $00000122 VOL: 0
+; 0000 00D7         switch (shine){
+;PCODE: $00000123 VOL: 0
+;PCODE: $00000124 VOL: 0
+; 0000 00D8             case 0:
+;PCODE: $00000125 VOL: 0
+;PCODE: $00000126 VOL: 0
+; 0000 00D9                 to_red=rand();
+;PCODE: $00000127 VOL: 0
+;PCODE: $00000128 VOL: 0
+; 0000 00DA                 break;
+;PCODE: $00000129 VOL: 0
+; 0000 00DB             case 1:
+;PCODE: $0000012A VOL: 0
+;PCODE: $0000012B VOL: 0
+;PCODE: $0000012C VOL: 0
+; 0000 00DC                 to_green=rand();
+;PCODE: $0000012D VOL: 0
+;PCODE: $0000012E VOL: 0
+; 0000 00DD                 break;
+;PCODE: $0000012F VOL: 0
+; 0000 00DE             case 2:
+;PCODE: $00000130 VOL: 0
+;PCODE: $00000131 VOL: 0
+;PCODE: $00000132 VOL: 0
+; 0000 00DF                 to_blue=rand();
+;PCODE: $00000133 VOL: 0
+;PCODE: $00000134 VOL: 0
+; 0000 00E0                 break;
+;PCODE: $00000135 VOL: 0
+; 0000 00E1             default:
+;PCODE: $00000136 VOL: 0
+; 0000 00E2                 goto loop;
+;PCODE: $00000137 VOL: 0
+; 0000 00E3         }
+;PCODE: $00000138 VOL: 0
+; 0000 00E4     }
+; 0000 00E5     //выполн€ем плавный переход к полученному цвету
+; 0000 00E6     while(red_bs!=to_red||green_bs!=to_green||blue_bs!=to_blue){
+;PCODE: $00000139 VOL: 0
+;PCODE: $0000013A VOL: 0
+;PCODE: $0000013B VOL: 0
+;PCODE: $0000013C VOL: 0
+;PCODE: $0000013D VOL: 0
+;PCODE: $0000013E VOL: 0
+;PCODE: $0000013F VOL: 0
+;PCODE: $00000140 VOL: 0
+;PCODE: $00000141 VOL: 0
+;PCODE: $00000142 VOL: 0
+;PCODE: $00000143 VOL: 0
+;PCODE: $00000144 VOL: 0
+;PCODE: $00000145 VOL: 0
+; 0000 00E7 
+; 0000 00E8         if(to_red!=red_bs)
+;PCODE: $00000146 VOL: 0
+;PCODE: $00000147 VOL: 0
+;PCODE: $00000148 VOL: 0
+; 0000 00E9             if(to_red>red_bs)red_bs++;
+;PCODE: $00000149 VOL: 0
+;PCODE: $0000014A VOL: 0
+;PCODE: $0000014B VOL: 0
+;PCODE: $0000014C VOL: 0
+; 0000 00EA             else red_bs--;
+;PCODE: $0000014D VOL: 0
+;PCODE: $0000014E VOL: 0
+;PCODE: $0000014F VOL: 0
+; 0000 00EB         if(to_green!=green_bs)
+;PCODE: $00000150 VOL: 0
+;PCODE: $00000151 VOL: 0
+;PCODE: $00000152 VOL: 0
+;PCODE: $00000153 VOL: 0
+;PCODE: $00000154 VOL: 0
+; 0000 00EC             if(to_green>green_bs)green_bs++;
+;PCODE: $00000155 VOL: 0
+;PCODE: $00000156 VOL: 0
+;PCODE: $00000157 VOL: 0
+;PCODE: $00000158 VOL: 0
+; 0000 00ED             else green_bs--;
+;PCODE: $00000159 VOL: 0
+;PCODE: $0000015A VOL: 0
+;PCODE: $0000015B VOL: 0
+; 0000 00EE         if(to_blue!=blue_bs)
+;PCODE: $0000015C VOL: 0
+;PCODE: $0000015D VOL: 0
+;PCODE: $0000015E VOL: 0
+;PCODE: $0000015F VOL: 0
+;PCODE: $00000160 VOL: 0
+; 0000 00EF             if(to_blue>blue_bs)blue_bs++;
+;PCODE: $00000161 VOL: 0
+;PCODE: $00000162 VOL: 0
+;PCODE: $00000163 VOL: 0
+;PCODE: $00000164 VOL: 0
+; 0000 00F0             else blue_bs--;
+;PCODE: $00000165 VOL: 0
+;PCODE: $00000166 VOL: 0
+;PCODE: $00000167 VOL: 0
+; 0000 00F1 
+; 0000 00F2         delay_ms(pause);
+;PCODE: $00000168 VOL: 0
+;PCODE: $00000169 VOL: 0
+;PCODE: $0000016A VOL: 0
+;PCODE: $0000016B VOL: 0
+;PCODE: $0000016C VOL: 0
+;PCODE: $0000016D VOL: 0
+; 0000 00F3     }
+;PCODE: $0000016E VOL: 0
+;PCODE: $0000016F VOL: 0
+; 0000 00F4 }
+;PCODE: $00000170 VOL: 0
+;PCODE: $00000171 VOL: 0
+;PCODE: $00000172 VOL: 0
+;PCODE: $00000173 VOL: 0
+;
+;//ќбработчики прерываний
+;// Timer 0 overflow interrupt service routine
+;interrupt [TIM0_OVF] void timer0_ovf_isr(void)
+; 0000 00F9 {
+;PCODE: $00000174 VOL: 0
+;PCODE: $00000175 VOL: 0
+; 0000 00FA     PORTB.RED_P=(pwm_counter>=red_bs<<1);
+;PCODE: $00000176 VOL: 0
+;PCODE: $00000177 VOL: 0
+;PCODE: $00000178 VOL: 0
+;PCODE: $00000179 VOL: 0
+;PCODE: $0000017A VOL: 0
+;PCODE: $0000017B VOL: 0
+;PCODE: $0000017C VOL: 0
+;PCODE: $0000017D VOL: 0
+;PCODE: $0000017E VOL: 0
+;PCODE: $0000017F VOL: 0
+;PCODE: $00000180 VOL: 0
+;PCODE: $00000181 VOL: 0
+;PCODE: $00000182 VOL: 0
+;PCODE: $00000183 VOL: 0
+;PCODE: $00000184 VOL: 0
+; 0000 00FB     PORTB.GREEN_P=(pwm_counter>=green_bs<<1);
+;PCODE: $00000185 VOL: 0
+;PCODE: $00000186 VOL: 0
+;PCODE: $00000187 VOL: 0
+;PCODE: $00000188 VOL: 0
+;PCODE: $00000189 VOL: 0
+;PCODE: $0000018A VOL: 0
+;PCODE: $0000018B VOL: 0
+;PCODE: $0000018C VOL: 0
+;PCODE: $0000018D VOL: 0
+;PCODE: $0000018E VOL: 0
+;PCODE: $0000018F VOL: 0
+;PCODE: $00000190 VOL: 0
+;PCODE: $00000191 VOL: 0
+;PCODE: $00000192 VOL: 0
+;PCODE: $00000193 VOL: 0
+; 0000 00FC     PORTB.BLUE_P=(pwm_counter>=blue_bs<<1);
+;PCODE: $00000194 VOL: 0
+;PCODE: $00000195 VOL: 0
+;PCODE: $00000196 VOL: 0
+;PCODE: $00000197 VOL: 0
+;PCODE: $00000198 VOL: 0
+;PCODE: $00000199 VOL: 0
+;PCODE: $0000019A VOL: 0
+;PCODE: $0000019B VOL: 0
+;PCODE: $0000019C VOL: 0
+;PCODE: $0000019D VOL: 0
+;PCODE: $0000019E VOL: 0
+;PCODE: $0000019F VOL: 0
+;PCODE: $000001A0 VOL: 0
+;PCODE: $000001A1 VOL: 0
+;PCODE: $000001A2 VOL: 0
+; 0000 00FD     pwm_counter++;
+;PCODE: $000001A3 VOL: 0
+; 0000 00FE     if(STATE!=SLEEP&&pwm_counter==0)time++;//подсчет времени свечени€, + 0,006826667 сек
+;PCODE: $000001A4 VOL: 0
+;PCODE: $000001A5 VOL: 0
+;PCODE: $000001A6 VOL: 0
+;PCODE: $000001A7 VOL: 0
+;PCODE: $000001A8 VOL: 0
+;PCODE: $000001A9 VOL: 0
+;PCODE: $000001AA VOL: 0
+;PCODE: $000001AB VOL: 0
+;PCODE: $000001AC VOL: 0
+;PCODE: $000001AD VOL: 0
+;PCODE: $000001AE VOL: 0
+;PCODE: $000001AF VOL: 0
+;PCODE: $000001B0 VOL: 0
+; 0000 00FF }
+;PCODE: $000001B1 VOL: 0
+;PCODE: $000001B2 VOL: 0
+;PCODE: $000001B3 VOL: 0
+;PCODE: $000001B4 VOL: 0
+;// Watchdog timeout interrupt service routine
+;interrupt [WDT] void wdt_timeout_isr(void)
+; 0000 0102 {
+;PCODE: $000001B5 VOL: 0
+;PCODE: $000001B6 VOL: 0
+; 0000 0103     //ничего не делаем, прерывание используетс€ только дл€ выхода из сп€щего режима
+; 0000 0104 }
+;PCODE: $000001B7 VOL: 0
+;PCODE: $000001B8 VOL: 0
+;PCODE: $000001B9 VOL: 0

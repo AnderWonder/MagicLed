@@ -1,0 +1,19 @@
+RAM Allocation
+Variable                                                          Address   Size
+--------------------------------------------------------------------------------
+_seed                                                             0x0070       4
+
+EEPROM Allocation
+Variable                                                          Address   Size
+--------------------------------------------------------------------------------
+
+Register Allocation
+Variable                                                          Register  Size
+--------------------------------------------------------------------------------
+pwm_counter                                                       R4           1
+red_bs                                                            R5           1
+green_bs                                                          R6           1
+blue_bs                                                           R7           1
+time                                                              R8,R9        2
+sensorNotTouched                                                  R10          1
+STATE                                                             R11          1

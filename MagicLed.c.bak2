@@ -1,0 +1,216 @@
+#include <tiny13a.h>
+#include <delay.h>
+#include <stdlib.h>
+
+//PINS
+#define RED_PIN 4
+#define GREEN_PIN 2
+#define BLUE_PIN 3
+#define SENSOR_OUT_PIN 1
+#define SENSOR_IN_PIN 0
+//STATES
+#define SLEEP 0
+#define AWAKED 1
+#define SHINE1 2
+#define SHINE2 3
+#define SHINE3 4
+//Values
+#define SENSOR_CALIBRATION_COUNT 5
+#define SENSOR_THRESHOLD 2
+
+unsigned char pwm_counter=0;//счЄтчик Ў»ћ цикла
+unsigned char red_bs=0;//€ркость светодиода1 (0-255)
+unsigned char green_bs=0;//€ркость светодиода2 (0-255) 
+unsigned char blue_bs=0;//€ркость светодиода3 (0-255)
+
+unsigned char sensorNotTouched=0;//значение не притронутого сенсора
+unsigned char thresh=0;
+
+unsigned char STATE=0;//состо€ние программы
+//*********
+void common_init();
+//
+unsigned char countSensor();
+unsigned char sensorTouched(unsigned char sensitivity);
+void calibrateSensor();
+//
+void changeColor(unsigned char to_red,unsigned char to_green,unsigned char to_blue,unsigned char pause);
+//*********
+void main(void)
+{
+    //unsigned char cycleCount=0;
+    unsigned char sensitivity=1;
+    //обща€ инициализаци€
+    common_init();              
+    //мигаем красным, синим и зелЄным перед калибровкой
+    PORTB.RED_PIN=1;
+    delay_ms(1000);
+    PORTB.RED_PIN=0;
+    PORTB.GREEN_PIN=1;
+    delay_ms(1000);   
+    PORTB.GREEN_PIN=0;
+    PORTB.BLUE_PIN=1;
+    delay_ms(1000);
+    PORTB.BLUE_PIN=0; 
+    calibrateSensor();
+    /*if (sensorNotTouched>4)red_bs=100;
+    if (sensorNotTouched>10)blue_bs=100;
+    if (sensorNotTouched>15)green_bs=100;*/
+    sensorNotTouched+=thresh;
+    //главный цикл
+    while (1){
+                             
+        /*if(cycleCount==0){
+            calibrateSensor();
+            srand(sensorNotTouched);
+        }    
+        cycleCount++;*/
+        if(sensorTouched(sensitivity)){
+            //sensorNotTouched-=thresh; 
+             sensitivity=1;      
+             switch(STATE){                
+                case SLEEP:
+                    //cycleCount=1;
+                    changeColor(255-(unsigned char)rand(),255-(unsigned char)rand(),255-(unsigned char)rand(),20);
+                    STATE=AWAKED;
+                    break;
+                case AWAKED:                            
+                    STATE=rand()<<1;//т.к. rand() вовзращает signed int > 0, то при обычном преобразовании
+                                    //в unsigned char будем иметь значени€ больше 128. ƒл€ случайности 8-го бита
+                                    //делаем сдвиг 
+                    if(STATE<85)STATE=SHINE1;
+                    if(STATE>=85&&STATE<=170)STATE=SHINE2;
+                    if(STATE>170)STATE=SHINE3; 
+                    break;               
+                case SHINE1:
+                    changeColor(rand()<<1,rand()<<1,rand()<<1,30);
+                    delay_ms(500);
+                    break; 
+                case SHINE2:
+                    changeColor(rand()<<1,rand()<<1,rand()<<1,2);
+                    break;
+                case SHINE3:
+                    changeColor(0,0,0,3);
+                    delay_ms(100); 
+                    changeColor(rand(),rand(),rand(),5);
+                    break;
+             }                                         
+        }
+        else{            
+            if(STATE!=SLEEP){
+                //cycleCount=1;
+                changeColor(0,0,0,20);
+                //sensorNotTouched+=thresh; 
+            }
+            STATE=SLEEP;
+            sensitivity=1;                    
+            //¬ключаем Watchdog Timer interrupt
+            WDTCR|=0x40;   
+            //переходим в энергосберегающий режим        
+            #asm("sleep");
+        }
+            
+    }
+}
+unsigned char sensorTouched(unsigned char sensitivity)
+{
+    while (sensitivity>0){
+        if(countSensor()>sensorNotTouched)return 1;
+        delay_ms(10);   
+        sensitivity--;   
+    }
+    return 0;         
+}
+void calibrateSensor()
+{
+    char calibrationCount=30;
+    unsigned char max;
+    while(calibrationCount){
+        max=countSensor();
+        if(max>sensorNotTouched)sensorNotTouched=max;
+        delay_ms(10);
+        calibrationCount--;
+    }
+    thresh=sensorNotTouched/SENSOR_THRESHOLD;
+}
+unsigned char countSensor()
+{
+    unsigned char sensorValue;
+    DDRB.SENSOR_IN_PIN=0;     
+     #asm("cli")    
+    PORTB.SENSOR_OUT_PIN=1;
+    TCNT0=0;
+    while(!PINB.SENSOR_IN_PIN); 
+    sensorValue=TCNT0;    
+    #asm("sei")
+    PORTB.SENSOR_OUT_PIN=0;       
+    DDRB.SENSOR_IN_PIN=1;
+    PORTB.SENSOR_IN_PIN=0;
+    return sensorValue;
+}
+
+//----------------------------------------------------------------------------------------------------
+void common_init()
+{
+    #pragma optsize-
+    //Crystal Oscillator division factor: 1
+    CLKPR=0x80;
+    CLKPR=0x00;
+    //Watchdog Timer initialization         
+    //Watchdog Timer Prescaler: OSC/64k - period .5 sec
+    //Watchdog mode: interrupt
+    WDTCR=0b00010101;
+    #ifdef _OPTIMIZE_SIZE_
+    #pragma optsize+
+    #endif
+    //Analog Comparator off in power reduction
+    ACSR=0x80;
+    //ADC off in power reduction
+    PRR=1;  
+    //установка режима таймера
+    //Mode:Normal
+    //TCCR0A=0;
+    //division factor: 1
+    TCCR0B=1;
+    //timer interrupt on overflow
+    TIMSK0=0b10;
+    //Input/Output Ports initialization
+    DDRB.SENSOR_OUT_PIN=1;
+    //DDRB.SENSOR_IN_PIN=0;
+    DDRB.RED_PIN=1;
+    DDRB.BLUE_PIN=1;
+    DDRB.GREEN_PIN=1;
+    //Enable sleep mode
+    MCUCR|=0b00110000; 
+}
+void changeColor(unsigned char to_red,unsigned char to_green,unsigned char to_blue,unsigned char pause)
+{
+    while(red_bs!=to_red||green_bs!=to_green||blue_bs!=to_blue){
+        if(to_red!=red_bs)
+            if(to_red>red_bs)red_bs++;
+            else red_bs--;
+        if(to_green!=green_bs)
+            if(to_green>green_bs)green_bs++;
+            else green_bs--;
+        if(to_blue!=blue_bs)
+            if(to_blue>blue_bs)blue_bs++;
+            else blue_bs--;
+        //if(pause)
+        delay_ms(pause);
+    } 
+}
+//ќбработчики прерываний
+// Timer 0 overflow interrupt service routine
+interrupt [TIM0_OVF] void timer0_ovf_isr(void)
+{
+    PORTB.RED_PIN=(pwm_counter<red_bs);
+    PORTB.GREEN_PIN=(pwm_counter<green_bs);
+    //PORTB.GREEN_PIN=(pwm_counter<green_bs>>1);//коррекци€ €ркости при необходимости
+    PORTB.BLUE_PIN=(pwm_counter<blue_bs);
+    pwm_counter++;    
+}
+// Watchdog timeout interrupt service routine
+interrupt [WDT] void wdt_timeout_isr(void)
+{
+    //ничего не делаем, прерывание используетс€ только дл€ выхода из сп€щего режима
+}
