@@ -2,6 +2,8 @@
 #include <delay.h>
 #include <stdlib.h>
 
+#define TOUCH_TRESHOLD 15
+
 //#define PROTEUS_SIMULATION//из-за ошибок симуляции Watchdog в протеусе используем чуть разный код.
 //                          //Для рабочей прошивки закоментировать этот макрос
 
@@ -152,7 +154,7 @@ unsigned char sensorTouched()
     unsigned char t=0;
     unsigned char i;  
     for(i=1;i<=10;i++){
-        if(sensorValue()>sensorNotTouched+15)t++;
+        if(sensorValue()>sensorNotTouched+TOUCH_TRESHOLD)t++;
         else if(t>0)t--;
         delay_ms(10);
     }
